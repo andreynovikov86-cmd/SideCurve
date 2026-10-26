@@ -45,8 +45,13 @@ local function execute(arguments, windows)
   end
   return output
 end
+local function system_tool(name)
+  -- Use Windows' bundled tools even when Git or another app prepends a different
+  -- tar.exe to PATH (GNU tar interprets a drive-letter path as a remote host).
+  return (os.getenv('SystemRoot') or 'C:/Windows') .. '/System32/' .. name
+end
 local function hash(path, windows)
-  local output = execute(windows and { 'certutil.exe', '-hashfile', path, 'SHA256' }
+  local output = execute(windows and { system_tool('certutil.exe'), '-hashfile', path, 'SHA256' }
     or { '/usr/bin/shasum', '-a', '256', path }, windows)
   for line in output:gmatch('[^\r\n]+') do
     local compact = line:gsub('%s', '')
@@ -80,7 +85,7 @@ local function remove_tree(path, windows)
     -- Windows' C runtime cannot remove directories. Delete this empty directory
     -- through .NET; no recursive delete or execution-policy override is used.
     local command = "[System.IO.Directory]::Delete('" .. path:gsub("'", "''") .. "')"
-    local ok = pcall(execute, {'powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command}, true)
+    local ok = pcall(execute, {system_tool('WindowsPowerShell/v1.0/powershell.exe'), '-NoProfile', '-NonInteractive', '-Command', command}, true)
     return ok and not exists(path)
   end
   return false
@@ -155,7 +160,7 @@ function M.install_vst3(directory, os_name, home, local_app_data)
   mkdir(stage)
   local destination = parent .. '/SideCurve.vst3'
   local ok, reason = pcall(function()
-    execute(windows and { 'tar.exe', '-xf', archive, '-C', stage }
+    execute(windows and { system_tool('tar.exe'), '-xf', archive, '-C', stage }
       or { '/usr/bin/ditto', '-x', '-k', archive, stage }, windows)
     local staged = stage .. '/SideCurve.vst3'
     if not reaper.file_exists(staged .. '/' .. asset.binary) then fail('The archive does not contain the expected SideCurve bundle.') end
