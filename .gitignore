@@ -1,0 +1,6 @@
+.DS_Store
+build*/
+.test-deps/
+*.zip
+__pycache__/
+*.pyc
