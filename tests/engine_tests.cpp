@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
+#include <string>
 using namespace SideKick;
 int checks = 0;
 void require(bool ok, const char *label) {
