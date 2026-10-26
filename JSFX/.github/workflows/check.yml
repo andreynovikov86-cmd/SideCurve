@@ -1,0 +1,20 @@
+name: Checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  jsfx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: justinfrankel/WDL
+          ref: 61c5553aad0d257775a4dd7bf36b8be617ec8281
+          path: .test-deps/WDL
+      - name: Build official EEL2 runner
+        run: make -C .test-deps/WDL/WDL/eel2 NO_GFX=1 PORTABLE=1 -j2 loose_eel
+      - name: Execute audio checks
+        run: python3 tests/test_engine.py .test-deps/WDL/WDL/eel2/loose_eel
+      - name: Execute native interface logic checks
+        run: python3 tests/test_ui.py .test-deps/WDL/WDL/eel2/loose_eel
