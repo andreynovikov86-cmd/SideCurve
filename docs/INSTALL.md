@@ -1,4 +1,4 @@
-# Install SideCurve VST3
+# Install and update SideCurve VST3
 
 Unzip the package and copy the **entire SideCurve.vst3 bundle**.
 
@@ -39,6 +39,10 @@ Other DAWs expose the auxiliary bus through their external-sidechain routing.
 Resizing is saved automatically for later instances. UI preferences are separate
 from the audio preset and do not alter saved projects' audio settings.
 
+For compatibility with early preview builds, the settings directory still uses
+the old internal name `SideKick`. The following are the actual settings paths
+used by the current **SideCurve**; do not rename these folders.
+
 macOS preferences: `~/Library/Application Support/SideKick/window.txt`.
 Windows preferences: `%APPDATA%\SideKick\window.txt`.
 
@@ -48,10 +52,21 @@ The VST3 is a separate plug-in format. Existing JSFX instances are preserved;
 REAPER does not replace them automatically. The reference JSFX included in the
 source repository is for testing, and is not a VST3 dependency.
 
-## Updating SideKick
+## Updating SideCurve
 
-Replace the old installed bundle with SideCurve.vst3; remove SideKick.vst3 from
-the active VST3 folder to avoid duplicate class IDs. Save projects and restart
-the DAW so loaded instances use the new binary. Old instances use the retained
-VST3 class IDs. The previous SideKick preference directory is retained to keep
-the user's saved window size.
+1. Download the latest package for your platform from
+   [GitHub Releases](https://github.com/andreynovikov86-cmd/SideCurve/releases).
+2. Save your projects and close the DAW so the loaded plug-in can be replaced.
+3. Replace the entire installed `SideCurve.vst3` bundle in the same VST3 folder.
+4. Reopen the DAW and refresh its VST3 plug-in list if needed.
+
+The existing plug-in IDs and window preferences are retained. Updates currently
+use the release archives; ReaPack installation and updates are not configured.
+
+### Migrating from an early preview
+
+Early previews were called **SideKick**. If an old `SideKick.vst3` bundle is
+still installed, remove it from the active VST3 folder when installing
+`SideCurve.vst3`, to avoid two bundles with the same plug-in IDs. Existing saved
+VST3 instances use those retained IDs. The legacy settings directory above is
+kept so SideCurve remembers the window size you already chose.
