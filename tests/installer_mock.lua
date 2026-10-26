@@ -7,7 +7,8 @@ local function quote(s)
   return "'" .. s:gsub("'", "'\\''") .. "'"
 end
 local function helper_call(action, path)
-  local f = assert(io.popen(quote(python) .. ' ' .. quote(helper) .. ' ' .. action .. ' ' .. quote(path), 'r'))
+  local command = quote(python) .. ' ' .. quote(helper) .. ' ' .. action .. ' ' .. quote(path)
+  local f = assert(io.popen(win and ('"' .. command .. '"') or command, 'r'))
   local result = f:read('*a'); local ok = f:close(); assert(ok, result); return result
 end
 local function list(action, path, index)

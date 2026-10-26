@@ -2,9 +2,9 @@ name: Verify repository installers
 on:
   push:
     branches: [main]
-    paths: ['distribution/**', 'tests/*installer*', 'tools/lua-test/**', 'index.xml', '.github/workflows/reapack.yml']
+    paths: ['distribution/**', 'tests/*installer*', 'tests/test_reapack_index.py', 'tools/reapack_index.py', 'tools/lua-test/**', 'index.xml', '.github/workflows/reapack.yml']
   pull_request:
-    paths: ['distribution/**', 'tests/*installer*', 'tools/lua-test/**', 'index.xml', '.github/workflows/reapack.yml']
+    paths: ['distribution/**', 'tests/*installer*', 'tests/test_reapack_index.py', 'tools/reapack_index.py', 'tools/lua-test/**', 'index.xml', '.github/workflows/reapack.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,6 +17,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify repository package routing and version history
+        run: python tests/test_reapack_index.py
       - name: Build the pinned Lua test runtime
         run: cmake -S tools/lua-test -B build-lua -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build-lua --config Release --parallel 4
