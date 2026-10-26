@@ -1,0 +1,827 @@
+desc:SideCurve (Sidechain Shaper)
+// @description SideCurve (Sidechain Shaper)
+// @version 0.4.5
+// @author Andrey Novikov
+// @license MIT
+// Standalone REAPER JSFX: audio and native interface in one file.
+tags:dynamics sidechain volume
+options:gfx_hz=60 gfx_idle
+in_pin:Main L
+in_pin:Main R
+in_pin:Sidechain L
+in_pin:Sidechain R
+out_pin:Main L
+out_pin:Main R
+slider1:0<0,1,1{Grid,Audio}>-Mode
+slider2:3<0,7,1{2/1,1/1,1/2,1/4,1/8,1/16,1/32,1/64}>-Length
+slider3:0<0,0,1>-Reserved
+slider4:100<0,100,0.1>-Mix (%)
+slider5:-30<-60,0,0.1>-Threshold (dB)
+slider6:25<10,20000,1>-Detector high pass (Hz)
+slider7:180<10,20000,1>-Detector low pass (Hz)
+slider8:25<1,250,1>-Retrigger guard (ms)
+slider9:0<0,1,1{Off,On}>-Listen to detector
+slider10:0<0,1,1>-Invert envelope vertically
+slider11:0.02<0,0.997,0.0001>-First point time
+slider12:0<0,1,0.001>-P1 level
+slider13:0.1856842105263158<0,1,0.001>-P2 time
+slider14:0<0,1,0.001>-P2 level
+slider15:0.34<0,1,0.001>-Reserved curvature time
+slider16:0.15<0.02,0.98,0.001>-Transition curvature
+slider17:0<0,0,1>-Reserved point slot A
+slider18:0<0,0,1>-Reserved point slot B
+slider19:0.5157894736842106<0,1,0.001>-P4 time
+slider20:1<0,1,0.001>-P4 level
+slider21:0.97<0.003,1,0.0001>-Last point time
+slider22:1<0,1,0.001>-P5 level
+slider23:0<0,2147483647,1>-Reserved legacy slot
+slider24:0<0,0,1>-Reserved
+slider25:1<1,1,1>-Reserved
+
+@init
+#resource_root = ""; // Configured by Install SideKick.lua; no script runs with the effect.
+ext_tail_size = -1;
+gfx_ext_retina==0 ? gfx_ext_retina=1;
+ui_visible=0;
+coeffs=3072; left_state=3200; right_state=3232;
+ext_gr_meter = 0;
+gain = 1;
+seam_on=0;
+phase = 1;
+active = 0;
+armed = 1;
+cooldown = 0;
+hits = 0;
+cycle = 1;
+last_bin = -1;
+last_mode = -1;
+px = 0; py = 16;
+wave = 128; scwave = 384; stamps = 640;
+hit_times=1024; hit_beats=1040; hit_ids=1056;
+
+// Every anchor has a horizontal tangent. The middle handle controls the
+// whole transition's rational bend; it never inserts a new spline knot.
+function fraction(u)(u-floor(u));
+function soften(u)(u*u*(3-2*u));
+function curve_at(p a av b bv first last curvature) local(u k)
+(
+  p<=a ? (u=soften(min(1,max(0,p/max(.000001,a))));first+(av-first)*u;) :
+  p>=b ? (u=soften(min(1,max(0,(p-b)/max(.000001,1-b))));bv+(last-bv)*u;) : (
+    u=soften(min(1,max(0,(p-a)/max(.000001,b-a))));
+    k=(1-curvature)/curvature;u=u/(k+(1-k)*u);
+    av+(bv-av)*u;
+  );
+);
+function start_seam()
+(
+  seam_from=gain;
+  seam_pos=0;
+  seam_on=1;
+);
+// The outer anchors delimit the editable core. In GRID, a cosine join
+// connects the last anchor to the first across the period boundary.
+function edge_start()(min(.997,max(0,slider11)));
+function edge_end()(min(1,max(edge_start()+.003,slider21)));
+function periodic_at(p a av b bv first last curvature start finish) local(u gap)
+(
+  p>=start && p<=finish ?
+    curve_at((p-start)/(finish-start),a,av,b,bv,first,last,curvature) : (
+      gap=1-finish+start;
+      u=gap>.0000001 ? (p>finish ? p-finish : 1-finish+p)/gap : 1;
+      u=.5-.5*cos($pi*min(1,max(0,u)));
+      last+(first-last)*u;
+    );
+);
+function shape(p) local(start finish pos v)
+(
+  start=edge_start();finish=edge_end();
+  slider1==1 ? (
+    p>=1 ? pos=-1 : (pos=finish+p;pos-=floor(pos););
+  ) : pos=p;
+  v=pos<0 ? py[4] : periodic_at(pos,px[1],py[1],px[3],py[3],py[0],py[4],bend,start,finish);
+  slider10>=.5 ? 1-v : v;
+);
+
+// Eighth-order Butterworth edges: four biquads each, 48 dB/octave.
+// RBJ low/high-pass coefficients: https://www.w3.org/TR/audio-eq-cookbook/
+// Independent stereo states preserve opposite-polarity sidechain signals.
+function make_edge(freq high offset) local(i q w co al norm c)
+(
+  w=2*$pi*min(max(10,freq),srate*.45)/srate;
+  co=cos(w); i=0;
+  loop(4,
+    q=1/(2*cos((2*i+1)*$pi/16));
+    al=sin(w)/(2*q);norm=1/(1+al);c=coeffs+offset+i*5;
+    high ? (c[0]=(1+co)*.5*norm;c[1]=-(1+co)*norm;) :
+           (c[0]=(1-co)*.5*norm;c[1]=(1-co)*norm;);
+    c[2]=c[0];c[3]=-2*co*norm;c[4]=(1-al)*norm;
+    i+=1;
+  );
+);
+function filter(v state) local(i c z out)
+(
+  i=0;
+  loop(8,
+    c=coeffs+i*5;z=state+i*2;
+    out=c[0]*v+z[0];
+    z[0]=c[1]*v-c[3]*out+z[1];
+    z[1]=c[2]*v-c[4]*out;
+    v=out;i+=1;
+  );
+  v;
+);
+
+function update_controls()
+(
+depth = min(1,max(0,slider4*0.01));
+threshold = 10^(slider5/20);
+// Recompute only when an edge or sample rate changes.
+old_hp!=slider6 || old_lp!=slider7 || old_sr!=srate ? (
+  make_edge(slider6,1,0);make_edge(max(slider6+1,slider7),0,20);
+  old_hp=slider6;old_lp=slider7;old_sr=srate;
+);
+release = exp(-1/(srate*0.008));
+slew = 1-exp(-1/(srate*0.0007));
+join_fraction=max(0,1-edge_end()+edge_start());
+display_end=edge_end();
+seam_samples=max(1,floor(srate*60*(8/(2^floor(slider2)))/max(1,tempo)*
+  (slider1==1 ? join_fraction : edge_start())));
+audition_slew = 1-exp(-1/(srate*0.005));
+guard_samples = max(1,slider8*srate*0.001);
+px[0]=0; py[0]=min(1,max(0,slider12));
+px[1]=min(.997,max(.001,slider13)); py[1]=min(1,max(0,slider14));
+px[3]=min(.999,max(px[1]+.002,slider19)); py[3]=min(1,max(0,slider20));
+bend=min(.98,max(.02,slider16));
+px[2]=(px[1]+px[3])*.5;py[2]=py[1]+(py[3]-py[1])*bend;
+px[4]=1; py[4]=min(1,max(0,slider22));
+
+);
+
+@slider
+update_controls();
+
+@block
+update_controls();
+dur_beats = 8/(2^floor(slider2));
+phase_step = max(1,tempo)/(60*srate*dur_beats);
+playing = play_state&1;
+slider1 != last_mode || (playing && !was_playing) ? (
+  active=0; phase=1; detector=0; armed=1; cooldown=0;
+  cycle+=1; memset(left_state,0,16);memset(right_state,0,16);
+  start_seam();
+);
+slider1 == 0 ? (
+  grid_pos = beat_position/dur_beats;
+  next_phase = grid_pos-floor(grid_pos);
+  abs(next_phase-phase)>0.15 ? (cycle+=1;start_seam(););
+  phase = next_phase;
+);
+last_mode=slider1; was_playing=playing;
+block_offset=0;
+ext_gr_meter = 20*log10(max(0.000001,gain));
+
+// UI-independent audio state. Audition belongs to the visible native window.
+listen_value=slider9 && ui_visible && slider1==1;
+
+@sample
+sc_l=filter(spl2,left_state);sc_r=filter(spl3,right_state);
+peak=max(abs(sc_l),abs(sc_r));
+detector=max(peak,detector*release);
+cooldown=max(0,cooldown-1);
+// Hysteresis rearms after the tail has fallen below -6 dB relative to threshold.
+// A new above-threshold attack always restarts, even during an active curve.
+detector < threshold*0.5 ? armed=1;
+slider1==1 && armed && cooldown<=0 && peak>=threshold ? (
+  phase=0; active=1; armed=0; cooldown=guard_samples;
+  hits+=1; cycle+=1;
+  hidx=(hits-1)%16;
+  hit_times[hidx]=play_position+block_offset/srate;
+  hit_beats[hidx]=beat_position+block_offset*max(1,tempo)/(60*srate);
+  hit_ids[hidx]=hits;
+  shot_from=gain;seam_on=0;
+);
+target=1;
+slider1==0 ? (
+  playing ? target=1-depth+depth*shape(phase);
+) : (
+  active && join_fraction>.0000001 && phase<join_fraction ? (
+    // Replay the COMPLETE outer-anchor join at each accepted attack.
+    // A rapid retrigger starts from the actual current gain, not a stale endpoint.
+    join_mix=.5-.5*cos($pi*phase/join_fraction);
+    first_gain=1-depth+depth*(slider10>=.5 ? 1-py[0] : py[0]);
+    target=shot_from+(first_gain-shot_from)*join_mix;
+  ) : target=1-depth+depth*shape(active ? phase : 1);
+);
+// Retrigger from actual gain; the first anchor sets the fade duration.
+// Raised-cosine endpoints have zero slope; rapid retriggers start from the
+// current gain rather than jumping to a previous cycle's endpoint.
+seam_on ? (
+  seam_mix=.5-.5*cos($pi*min(1,seam_pos/seam_samples));
+  target=seam_from+(target-seam_from)*seam_mix;
+  seam_pos+=1;
+  seam_pos>seam_samples ? seam_on=0;
+);
+gain += slew*(target-gain);
+audition += audition_slew*(listen_value-audition);
+out_l=spl0*gain; out_r=spl1*gain;
+wave_phase=slider1==1 ? (active ? fraction(display_end+phase) : display_end) : phase;
+idx=min(255,max(0,floor(wave_phase*256)));
+stamps[idx]!=cycle ? (wave[idx]=0; scwave[idx]=0; stamps[idx]=cycle;);
+wave[idx]=max(wave[idx],max(abs(out_l),abs(out_r)));
+scwave[idx]=max(scwave[idx],peak);
+spl0=out_l*(1-audition)+sc_l*audition;
+spl1=out_r*(1-audition)+sc_r*audition;
+slider1==0 ? (
+  playing ? (
+    phase+=phase_step;
+    phase>=1 ? (phase-=floor(phase);cycle+=1;);
+  );
+) : active ? (
+  phase+=phase_step;
+  phase>=1 ? (phase=1;active=0;);
+);
+block_offset+=1;
+
+@gfx 698 478
+// Native vector interface. Only the audio thread owns DSP point/filter state.
+function color(rgb alpha)
+(
+  gfx_set(((rgb>>16)&255)/255,((rgb>>8)&255)/255,(rgb&255)/255,alpha);
+);
+function rect(x y w h rgb)
+(
+  color(rgb,1);gfx_rect(x*us,y*us,w*us,h*us);
+);
+// Pixel-aligned filled capsules. End caps and straight section have exactly
+// the same height; AA circles previously made JSFX rail ends bulge by a pixel.
+function roundbox(x y w h r rgb) local(l top ww hh rr row dy inset cut aa)
+(
+  l=floor(x*us+.5);top=floor(y*us+.5);
+  ww=max(1,floor(w*us+.5));hh=max(1,floor(h*us+.5));
+  rr=min(r*us,min(ww,hh)*.5);row=0;
+  loop(hh,
+    dy=max(0,max(rr-row-.5,row+.5-(hh-rr)));
+    inset=rr-sqrt(max(0,rr*rr-dy*dy));cut=ceil(inset);aa=cut-inset;
+    color(rgb,1);gfx_rect(l+cut,top+row,max(0,ww-2*cut),1);
+    aa>0 ? (color(rgb,aa);gfx_rect(l+cut-1,top+row,1,1);gfx_rect(l+ww-cut,top+row,1,1););
+    row+=1;
+  );
+);
+function line(x y xx yy rgb alpha)
+(
+  color(rgb,alpha);gfx_line(x*us,y*us,xx*us,yy*us,1);
+);
+function stroke(x y xx yy width rgb) local(dx dy mag nx ny)
+(
+  dx=xx-x;dy=yy-y;mag=max(.00001,sqrt(dx*dx+dy*dy));
+  nx=-dy/mag*width*.5;ny=dx/mag*width*.5;color(rgb,1);
+  gfx_triangle((x+nx)*us,(y+ny)*us,(xx+nx)*us,(yy+ny)*us,(xx-nx)*us,(yy-ny)*us,(x-nx)*us,(y-ny)*us);
+  gfx_line((x+nx)*us,(y+ny)*us,(xx+nx)*us,(yy+ny)*us,1);
+  gfx_line((x-nx)*us,(y-ny)*us,(xx-nx)*us,(yy-ny)*us,1);
+);
+function label(x y txt size rgb)
+(
+  color(rgb,1);gfx_setfont(1,"Arial",max(9,size*us),98);
+  gfx_x=x*us;gfx_y=y*us;gfx_drawstr(txt);
+);
+function centered(x y w h txt size rgb)
+(
+  color(rgb,1);gfx_setfont(1,"Arial",max(9,size*us),98);
+  gfx_x=x*us;gfx_y=y*us;gfx_drawstr(txt,5,(x+w)*us,(y+h)*us);
+);
+function right_label(x y w h txt size rgb)
+(
+  color(rgb,1);gfx_setfont(1,"Arial",max(9,size*us),98);
+  gfx_x=x*us;gfx_y=y*us;gfx_drawstr(txt,6,(x+w)*us,(y+h)*us);
+);
+function inside(x y w h)(mx>=x && mx<x+w && my>=y && my<y+h);
+function put(param val) local(mask)
+(
+  slider(param)=val;mask=2^(param-1);touch_mask|=mask;
+  sliderchange(mask);slider_automate(mask);
+);
+function factory_reset()
+(
+  // Same parameter values as REAPER's "Reset to factory default" command.
+  put(1,0);
+  put(2,3);
+  put(3,0);
+  put(4,100);
+  put(5,-30);
+  put(6,25);
+  put(7,180);
+  put(8,25);
+  put(9,0);
+  put(10,0);
+  put(11,0.02);
+  put(12,0);
+  put(13,0.1856842105263158);
+  put(14,0);
+  put(15,0.34);
+  put(16,0.15);
+  put(17,0);
+  put(18,0);
+  put(19,0.5157894736842106);
+  put(20,1);
+  put(21,0.97);
+  put(22,1);
+  put(23,0);
+  put(24,0);
+  put(25,1);
+);
+// REAPER stores the user's default by preset name, independently of factory
+// values. Read only our own mapping and preset file, on an explicit RESET click.
+function trim_line(str) local(n c)
+(
+  n=strlen(str);
+  while(n>0 && ((c=str_getchar(str,n-1))==10 || c==13))(n-=1;);
+  str_setlen(str,n);
+);
+function hex_digit(c)
+(
+  c>=48 && c<=57 ? c-48 : c>=65 && c<=70 ? c-55 : c>=97 && c<=102 ? c-87 : -1;
+);
+function apply_preset_data(data) local(i n a b j k value ok)
+(
+  strcpy(#decoded,"");i=0;n=strlen(data);ok=n>2 && n<16384;
+  while(ok && i+1<n-2)(
+    a=hex_digit(str_getchar(data,i));b=hex_digit(str_getchar(data,i+1));
+    a<0 || b<0 ? ok=0 : str_setchar(#decoded,strlen(#decoded),a*16+b);
+    i+=2;
+  );
+  // Stage all sliders before touching the live parameters.
+  i=0;j=0;n=strlen(#decoded);
+  while(ok && j<25)(
+    while(i<n && str_getchar(#decoded,i)==32)(i+=1;);
+    k=i;while(i<n && str_getchar(#decoded,i)!=32)(i+=1;);
+    strcpy_substr(#token,#decoded,k,i-k);
+    match("%f",#token,value) ? (12000[j]=value;j+=1;) : ok=0;
+  );
+  ok && j==25 ? (j=0;loop(25,put(j+1,12000[j]);j+=1;);1;) : 0;
+);
+function user_default() local(h section found loaded)
+(
+  loaded=0;
+  strlen(#resource_root)>0 ? (
+    sprintf(#path,"%s/reaper-defpresets.ini",#resource_root);h=file_open(#path);
+    strcpy(#default_name,"");section=0;
+    h>=0 ? (
+      while(file_avail(h)>0)(
+        file_string(h,#ini_line);trim_line(#ini_line);
+        str_getchar(#ini_line,0)==91 ? section=!strcmp(#ini_line,"[defaultpresets]");
+        section && (match("js-SideKick/SideKick.jsfx=%s",#ini_line,#default_name) ||
+          match("js-SideKick\\SideKick.jsfx=%s",#ini_line,#default_name));
+      );
+      file_close(h);
+    );
+    strlen(#default_name)>0 ? (
+      sprintf(#path,"%s/presets/js-SideKick_SideKick_jsfx.ini",#resource_root);h=file_open(#path);
+      h>=0 ? (
+        strcpy(#preset_name,"");strcpy(#preset_data,"");section=0;
+        while(file_avail(h)>0 && !loaded)(
+          file_string(h,#ini_line);trim_line(#ini_line);
+          str_getchar(#ini_line,0)==91 ? (
+            section && !strcmp(#preset_name,#default_name) ? loaded=apply_preset_data(#preset_data);
+            section=match("[Preset%d]",#ini_line,found);
+            strcpy(#preset_name,"");strcpy(#preset_data,"");
+          ) : section ? (
+            match("Name=%s",#ini_line,#preset_name);
+            match("Data=%s",#ini_line,#preset_data);
+          );
+        );
+        !loaded && section && !strcmp(#preset_name,#default_name) ? loaded=apply_preset_data(#preset_data);
+        file_close(h);
+      );
+    );
+  );
+  loaded;
+);
+function reset_shape()
+(
+  user_default() ? 1 : factory_reset();
+);
+function button(x y w h txt selected) local(bgc)
+(
+  bgc=selected ? ui_selected : inside(x,y,w,h) ? 0x464646 : 0x3B3B3B;
+  roundbox(x,y,w,h,7,bgc);
+  centered(x,y,w,h,txt,15,ui_text);
+  pressed && inside(x,y,w,h);
+);
+// Approved AN mark: identical outlines to the native SVG asset.
+function brand_mark(x y h rgb)
+(
+  color(rgb,1);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.6943005*h)*us,(y+0.0000000*h)*us,(x+1.1606218*h)*us,(y+0.0000000*h)*us,(x+1.1606218*h)*us,(y+0.0000000*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+1.1606218*h)*us,(y+0.0000000*h)*us,(x+1.2642487*h)*us,(y+0.2020725*h)*us,(x+1.2642487*h)*us,(y+0.2020725*h)*us);
+  gfx_triangle((x+1.2642487*h)*us,(y+0.2020725*h)*us,(x+1.3005181*h)*us,(y+0.2538860*h)*us,(x+1.3316062*h)*us,(y+0.3264249*h)*us,(x+1.3316062*h)*us,(y+0.3264249*h)*us);
+  gfx_triangle((x+1.3316062*h)*us,(y+0.3264249*h)*us,(x+1.3678756*h)*us,(y+0.3782383*h)*us,(x+1.3937824*h)*us,(y+0.4404145*h)*us,(x+1.3937824*h)*us,(y+0.4404145*h)*us);
+  gfx_triangle((x+1.4196891*h)*us,(y+0.4041451*h)*us,(x+1.5699482*h)*us,(y+0.0000000*h)*us,(x+1.8756477*h)*us,(y+0.0000000*h)*us,(x+1.8756477*h)*us,(y+0.0000000*h)*us);
+  gfx_triangle((x+1.4041451*h)*us,(y+0.4404145*h)*us,(x+1.4196891*h)*us,(y+0.4041451*h)*us,(x+1.8756477*h)*us,(y+0.0000000*h)*us,(x+1.8756477*h)*us,(y+0.0000000*h)*us);
+  gfx_triangle((x+1.4041451*h)*us,(y+0.4404145*h)*us,(x+1.8756477*h)*us,(y+0.0000000*h)*us,(x+1.8652850*h)*us,(y+0.0466321*h)*us,(x+1.8652850*h)*us,(y+0.0466321*h)*us);
+  gfx_triangle((x+1.4041451*h)*us,(y+0.4404145*h)*us,(x+1.8652850*h)*us,(y+0.0466321*h)*us,(x+1.8082902*h)*us,(y+0.1709845*h)*us,(x+1.8082902*h)*us,(y+0.1709845*h)*us);
+  gfx_triangle((x+1.4041451*h)*us,(y+0.4404145*h)*us,(x+1.8082902*h)*us,(y+0.1709845*h)*us,(x+1.8031088*h)*us,(y+0.2020725*h)*us,(x+1.8031088*h)*us,(y+0.2020725*h)*us);
+  gfx_triangle((x+1.4041451*h)*us,(y+0.4404145*h)*us,(x+1.8031088*h)*us,(y+0.2020725*h)*us,(x+1.7720207*h)*us,(y+0.2642487*h)*us,(x+1.7720207*h)*us,(y+0.2642487*h)*us);
+  gfx_triangle((x+1.4041451*h)*us,(y+0.4404145*h)*us,(x+1.7720207*h)*us,(y+0.2642487*h)*us,(x+1.7668394*h)*us,(y+0.2953368*h)*us,(x+1.7668394*h)*us,(y+0.2953368*h)*us);
+  gfx_triangle((x+1.4041451*h)*us,(y+0.4404145*h)*us,(x+1.7668394*h)*us,(y+0.2953368*h)*us,(x+1.7253886*h)*us,(y+0.3834197*h)*us,(x+1.7253886*h)*us,(y+0.3834197*h)*us);
+  gfx_triangle((x+1.4041451*h)*us,(y+0.4404145*h)*us,(x+1.7253886*h)*us,(y+0.3834197*h)*us,(x+1.7202073*h)*us,(y+0.4145078*h)*us,(x+1.7202073*h)*us,(y+0.4145078*h)*us);
+  gfx_triangle((x+1.4041451*h)*us,(y+0.4404145*h)*us,(x+1.7202073*h)*us,(y+0.4145078*h)*us,(x+1.6994819*h)*us,(y+0.4507772*h)*us,(x+1.6994819*h)*us,(y+0.4507772*h)*us);
+  gfx_triangle((x+1.3937824*h)*us,(y+0.4404145*h)*us,(x+1.4041451*h)*us,(y+0.4404145*h)*us,(x+1.6994819*h)*us,(y+0.4507772*h)*us,(x+1.6994819*h)*us,(y+0.4507772*h)*us);
+  gfx_triangle((x+1.3937824*h)*us,(y+0.4404145*h)*us,(x+1.6994819*h)*us,(y+0.4507772*h)*us,(x+1.6943005*h)*us,(y+0.4818653*h)*us,(x+1.6943005*h)*us,(y+0.4818653*h)*us);
+  gfx_triangle((x+1.3937824*h)*us,(y+0.4404145*h)*us,(x+1.6943005*h)*us,(y+0.4818653*h)*us,(x+1.6735751*h)*us,(y+0.5181347*h)*us,(x+1.6735751*h)*us,(y+0.5181347*h)*us);
+  gfx_triangle((x+1.3937824*h)*us,(y+0.4404145*h)*us,(x+1.6735751*h)*us,(y+0.5181347*h)*us,(x+1.6683938*h)*us,(y+0.5492228*h)*us,(x+1.6683938*h)*us,(y+0.5492228*h)*us);
+  gfx_triangle((x+1.3937824*h)*us,(y+0.4404145*h)*us,(x+1.6683938*h)*us,(y+0.5492228*h)*us,(x+1.6373057*h)*us,(y+0.6113990*h)*us,(x+1.6373057*h)*us,(y+0.6113990*h)*us);
+  gfx_triangle((x+1.3937824*h)*us,(y+0.4404145*h)*us,(x+1.6373057*h)*us,(y+0.6113990*h)*us,(x+1.6321244*h)*us,(y+0.6424870*h)*us,(x+1.6321244*h)*us,(y+0.6424870*h)*us);
+  gfx_triangle((x+1.3937824*h)*us,(y+0.4404145*h)*us,(x+1.6321244*h)*us,(y+0.6424870*h)*us,(x+1.5129534*h)*us,(y+0.9430052*h)*us,(x+1.5129534*h)*us,(y+0.9430052*h)*us);
+  gfx_triangle((x+1.3316062*h)*us,(y+0.3264249*h)*us,(x+1.3937824*h)*us,(y+0.4404145*h)*us,(x+1.5129534*h)*us,(y+0.9430052*h)*us,(x+1.5129534*h)*us,(y+0.9430052*h)*us);
+  gfx_triangle((x+1.2642487*h)*us,(y+0.2020725*h)*us,(x+1.3316062*h)*us,(y+0.3264249*h)*us,(x+1.5129534*h)*us,(y+0.9430052*h)*us,(x+1.5129534*h)*us,(y+0.9430052*h)*us);
+  gfx_triangle((x+1.2642487*h)*us,(y+0.2020725*h)*us,(x+1.5129534*h)*us,(y+0.9430052*h)*us,(x+1.3834197*h)*us,(y+0.9430052*h)*us,(x+1.3834197*h)*us,(y+0.9430052*h)*us);
+  gfx_triangle((x+1.2642487*h)*us,(y+0.2020725*h)*us,(x+1.3834197*h)*us,(y+0.9430052*h)*us,(x+1.3730570*h)*us,(y+0.9326425*h)*us,(x+1.3730570*h)*us,(y+0.9326425*h)*us);
+  gfx_triangle((x+1.2642487*h)*us,(y+0.2020725*h)*us,(x+1.3730570*h)*us,(y+0.9326425*h)*us,(x+1.0880829*h)*us,(y+0.3626943*h)*us,(x+1.0880829*h)*us,(y+0.3626943*h)*us);
+  gfx_triangle((x+1.2642487*h)*us,(y+0.2020725*h)*us,(x+1.0880829*h)*us,(y+0.3626943*h)*us,(x+1.0880829*h)*us,(y+0.3471503*h)*us,(x+1.0880829*h)*us,(y+0.3471503*h)*us);
+  gfx_triangle((x+1.2642487*h)*us,(y+0.2020725*h)*us,(x+1.0880829*h)*us,(y+0.3471503*h)*us,(x+1.0259067*h)*us,(y+0.2176166*h)*us,(x+1.0259067*h)*us,(y+0.2176166*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+1.2642487*h)*us,(y+0.2020725*h)*us,(x+1.0259067*h)*us,(y+0.2176166*h)*us,(x+1.0259067*h)*us,(y+0.2176166*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+1.0259067*h)*us,(y+0.2176166*h)*us,(x+0.8082902*h)*us,(y+0.2176166*h)*us,(x+0.8082902*h)*us,(y+0.2176166*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.8082902*h)*us,(y+0.2176166*h)*us,(x+0.6010363*h)*us,(y+0.5284974*h)*us,(x+0.6010363*h)*us,(y+0.5284974*h)*us);
+  gfx_triangle((x+0.7150259*h)*us,(y+0.5284974*h)*us,(x+0.8134715*h)*us,(y+0.2590674*h)*us,(x+1.0000000*h)*us,(y+0.2590674*h)*us,(x+1.0000000*h)*us,(y+0.2590674*h)*us);
+  gfx_triangle((x+1.0000000*h)*us,(y+0.2590674*h)*us,(x+1.3264249*h)*us,(y+0.9430052*h)*us,(x+1.1658031*h)*us,(y+0.9378238*h)*us,(x+1.1658031*h)*us,(y+0.9378238*h)*us);
+  gfx_triangle((x+1.0000000*h)*us,(y+0.2590674*h)*us,(x+1.1658031*h)*us,(y+0.9378238*h)*us,(x+1.0259067*h)*us,(y+0.6580311*h)*us,(x+1.0259067*h)*us,(y+0.6580311*h)*us);
+  gfx_triangle((x+1.0000000*h)*us,(y+0.2590674*h)*us,(x+1.0259067*h)*us,(y+0.6580311*h)*us,(x+1.0000000*h)*us,(y+0.5854922*h)*us,(x+1.0000000*h)*us,(y+0.5854922*h)*us);
+  gfx_triangle((x+0.7150259*h)*us,(y+0.5284974*h)*us,(x+1.0000000*h)*us,(y+0.2590674*h)*us,(x+1.0000000*h)*us,(y+0.5854922*h)*us,(x+1.0000000*h)*us,(y+0.5854922*h)*us);
+  gfx_triangle((x+0.6010363*h)*us,(y+0.5284974*h)*us,(x+0.7150259*h)*us,(y+0.5284974*h)*us,(x+1.0000000*h)*us,(y+0.5854922*h)*us,(x+1.0000000*h)*us,(y+0.5854922*h)*us);
+  gfx_triangle((x+0.6010363*h)*us,(y+0.5284974*h)*us,(x+1.0000000*h)*us,(y+0.5854922*h)*us,(x+0.9896373*h)*us,(y+0.5854922*h)*us,(x+0.9896373*h)*us,(y+0.5854922*h)*us);
+  gfx_triangle((x+0.6010363*h)*us,(y+0.5284974*h)*us,(x+0.9896373*h)*us,(y+0.5854922*h)*us,(x+0.8704663*h)*us,(y+0.9430052*h)*us,(x+0.8704663*h)*us,(y+0.9430052*h)*us);
+  gfx_triangle((x+0.8704663*h)*us,(y+0.9430052*h)*us,(x+0.5751295*h)*us,(y+0.9430052*h)*us,(x+0.5751295*h)*us,(y+0.9222798*h)*us,(x+0.5751295*h)*us,(y+0.9222798*h)*us);
+  gfx_triangle((x+0.8704663*h)*us,(y+0.9430052*h)*us,(x+0.5751295*h)*us,(y+0.9222798*h)*us,(x+0.6476684*h)*us,(y+0.7202073*h)*us,(x+0.6476684*h)*us,(y+0.7202073*h)*us);
+  gfx_triangle((x+0.6010363*h)*us,(y+0.5284974*h)*us,(x+0.8704663*h)*us,(y+0.9430052*h)*us,(x+0.6476684*h)*us,(y+0.7202073*h)*us,(x+0.6476684*h)*us,(y+0.7202073*h)*us);
+  gfx_triangle((x+0.6010363*h)*us,(y+0.5284974*h)*us,(x+0.6476684*h)*us,(y+0.7202073*h)*us,(x+0.4766839*h)*us,(y+0.7202073*h)*us,(x+0.4766839*h)*us,(y+0.7202073*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.6010363*h)*us,(y+0.5284974*h)*us,(x+0.4766839*h)*us,(y+0.7202073*h)*us,(x+0.4766839*h)*us,(y+0.7202073*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.4766839*h)*us,(y+0.7202073*h)*us,(x+0.3730570*h)*us,(y+0.8808290*h)*us,(x+0.3730570*h)*us,(y+0.8808290*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.3730570*h)*us,(y+0.8808290*h)*us,(x+0.0000000*h)*us,(y+1.0000000*h)*us,(x+0.0000000*h)*us,(y+1.0000000*h)*us);
+  gfx_triangle((x+0.0000000*h)*us,(y+1.0000000*h)*us,(x+0.0414508*h)*us,(y+0.9274611*h)*us,(x+0.0569948*h)*us,(y+0.9170984*h)*us,(x+0.0569948*h)*us,(y+0.9170984*h)*us);
+  gfx_triangle((x+0.0569948*h)*us,(y+0.9170984*h)*us,(x+0.1243523*h)*us,(y+0.8082902*h)*us,(x+0.1658031*h)*us,(y+0.7616580*h)*us,(x+0.1658031*h)*us,(y+0.7616580*h)*us);
+  gfx_triangle((x+0.0000000*h)*us,(y+1.0000000*h)*us,(x+0.0569948*h)*us,(y+0.9170984*h)*us,(x+0.1658031*h)*us,(y+0.7616580*h)*us,(x+0.1658031*h)*us,(y+0.7616580*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.0000000*h)*us,(y+1.0000000*h)*us,(x+0.1658031*h)*us,(y+0.7616580*h)*us,(x+0.1658031*h)*us,(y+0.7616580*h)*us);
+  gfx_triangle((x+0.1658031*h)*us,(y+0.7616580*h)*us,(x+0.2435233*h)*us,(y+0.6373057*h)*us,(x+0.2590674*h)*us,(y+0.6269430*h)*us,(x+0.2590674*h)*us,(y+0.6269430*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.1658031*h)*us,(y+0.7616580*h)*us,(x+0.2590674*h)*us,(y+0.6269430*h)*us,(x+0.2590674*h)*us,(y+0.6269430*h)*us);
+  gfx_triangle((x+0.2590674*h)*us,(y+0.6269430*h)*us,(x+0.3264249*h)*us,(y+0.5181347*h)*us,(x+0.3419689*h)*us,(y+0.5077720*h)*us,(x+0.3419689*h)*us,(y+0.5077720*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.2590674*h)*us,(y+0.6269430*h)*us,(x+0.3419689*h)*us,(y+0.5077720*h)*us,(x+0.3419689*h)*us,(y+0.5077720*h)*us);
+  gfx_triangle((x+0.3419689*h)*us,(y+0.5077720*h)*us,(x+0.3626943*h)*us,(y+0.4663212*h)*us,(x+0.3782383*h)*us,(y+0.4559585*h)*us,(x+0.3782383*h)*us,(y+0.4559585*h)*us);
+  gfx_triangle((x+0.3782383*h)*us,(y+0.4559585*h)*us,(x+0.3989637*h)*us,(y+0.4145078*h)*us,(x+0.4145078*h)*us,(y+0.4041451*h)*us,(x+0.4145078*h)*us,(y+0.4041451*h)*us);
+  gfx_triangle((x+0.3419689*h)*us,(y+0.5077720*h)*us,(x+0.3782383*h)*us,(y+0.4559585*h)*us,(x+0.4145078*h)*us,(y+0.4041451*h)*us,(x+0.4145078*h)*us,(y+0.4041451*h)*us);
+  gfx_triangle((x+0.4145078*h)*us,(y+0.4041451*h)*us,(x+0.4352332*h)*us,(y+0.3626943*h)*us,(x+0.4507772*h)*us,(y+0.3523316*h)*us,(x+0.4507772*h)*us,(y+0.3523316*h)*us);
+  gfx_triangle((x+0.4507772*h)*us,(y+0.3523316*h)*us,(x+0.4611399*h)*us,(y+0.3264249*h)*us,(x+0.4766839*h)*us,(y+0.3160622*h)*us,(x+0.4766839*h)*us,(y+0.3160622*h)*us);
+  gfx_triangle((x+0.4145078*h)*us,(y+0.4041451*h)*us,(x+0.4507772*h)*us,(y+0.3523316*h)*us,(x+0.4766839*h)*us,(y+0.3160622*h)*us,(x+0.4766839*h)*us,(y+0.3160622*h)*us);
+  gfx_triangle((x+0.3419689*h)*us,(y+0.5077720*h)*us,(x+0.4145078*h)*us,(y+0.4041451*h)*us,(x+0.4766839*h)*us,(y+0.3160622*h)*us,(x+0.4766839*h)*us,(y+0.3160622*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.3419689*h)*us,(y+0.5077720*h)*us,(x+0.4766839*h)*us,(y+0.3160622*h)*us,(x+0.4766839*h)*us,(y+0.3160622*h)*us);
+  gfx_triangle((x+0.4766839*h)*us,(y+0.3160622*h)*us,(x+0.4974093*h)*us,(y+0.2746114*h)*us,(x+0.5129534*h)*us,(y+0.2642487*h)*us,(x+0.5129534*h)*us,(y+0.2642487*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.4766839*h)*us,(y+0.3160622*h)*us,(x+0.5129534*h)*us,(y+0.2642487*h)*us,(x+0.5129534*h)*us,(y+0.2642487*h)*us);
+  gfx_triangle((x+0.5129534*h)*us,(y+0.2642487*h)*us,(x+0.5336788*h)*us,(y+0.2227979*h)*us,(x+0.5492228*h)*us,(y+0.2124352*h)*us,(x+0.5492228*h)*us,(y+0.2124352*h)*us);
+  gfx_triangle((x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.5129534*h)*us,(y+0.2642487*h)*us,(x+0.5492228*h)*us,(y+0.2124352*h)*us,(x+0.5492228*h)*us,(y+0.2124352*h)*us);
+  gfx_triangle((x+0.5492228*h)*us,(y+0.2124352*h)*us,(x+0.5595855*h)*us,(y+0.1865285*h)*us,(x+0.5751295*h)*us,(y+0.1761658*h)*us,(x+0.5751295*h)*us,(y+0.1761658*h)*us);
+);
+function signature_label(x y txt size rgb)
+(
+  color(rgb,1);gfx_setfont(2,"Arial",max(9,size*us),0);
+  gfx_x=x*us;gfx_y=y*us;gfx_drawstr(txt);
+);
+// Cache the AN mark and two-line title at 4x the UI scale.
+function branding(x y) local(saved_us saved_dest pixels height)
+(
+  saved_us=us;saved_dest=gfx_dest;pixels=max(216,ceil(216*us*4));height=ceil(46*pixels/216);
+  brand_pixels!=pixels ? (
+    brand_pixels=pixels;gfx_setimgdim(1,pixels,height);gfx_dest=1;us=pixels/216;
+    rect(0,0,216,46,ui_bg);
+    brand_mark(0,6,32,ui_text);
+    label(72,3,"SideCurve",26,ui_text);
+    signature_label(72,25,"by Andrey Novikov",14,0xC6C6C6);
+  );
+  us=saved_us;gfx_dest=saved_dest;
+  gfx_blit(1,1,0,0,0,pixels,height,x*us,y*us,216*us,46*us);
+);
+function knob_vector(cx cy mix) local(i aa row rows fy half shade face_color)
+(
+  color(0x242424,1);gfx_circle(cx*us,(cy+1)*us,48*us,1,1);
+  color(0x363636,1);gfx_circle(cx*us,cy*us,48*us,1,1);
+  row=0;rows=max(1,ceil(96*us));
+  loop(rows,
+    fy=-48+(row+.5)/us;half=sqrt(max(0,48*48-fy*fy));
+    shade=floor(66-12*row/rows);face_color=shade*65793;
+    color(face_color,1);gfx_rect((cx-half)*us,(cy+fy)*us,half*2*us,1);
+    row+=1;
+  );
+  i=0;loop(481,
+    aa=$pi*.75+$pi*1.5*i/480;
+    color(mix>0 && i/480<=mix ? ui_accent : ui_rail,1);
+    gfx_circle((cx+cos(aa)*55)*us,(cy+sin(aa)*55)*us,3.25*us,1,1);
+    i+=1;
+  );
+  aa=$pi*.75+$pi*1.5*mix;
+  color(0xF1EFE9,1);gfx_circle((cx+cos(aa)*48*.84)*us,(cy+sin(aa)*48*.84)*us,3.6*us,1,1);
+);
+function knob_art(x y mix) local(saved_us saved_dest pixels)
+(
+  saved_us=us;saved_dest=gfx_dest;pixels=max(128,ceil(122*us*3));
+  knob_pixels!=pixels || knob_mix!=mix || !knob_cached ? (
+    knob_pixels=pixels;knob_mix=mix;knob_cached=1;
+    gfx_setimgdim(0,pixels,pixels);gfx_dest=0;us=pixels/122;
+    rect(0,0,122,122,ui_bg);knob_vector(61,61,mix);
+  );
+  us=saved_us;gfx_dest=saved_dest;
+  gfx_blit(0,1,0,0,0,pixels,pixels,(x-61)*us,(y-61)*us,122*us,122*us);
+);
+function read_points() local(j start finish)
+(
+  start=edge_start();finish=edge_end();uspan=finish-start;
+  ux[0]=start;uy[0]=slider12;
+  ux[1]=start+min(.997,max(.001,slider13))*uspan;uy[1]=slider14;
+  ux[3]=start+min(.999,max(slider13+.002,slider19))*uspan;uy[3]=slider20;
+  ux[4]=finish;uy[4]=slider22;ubend=slider16;
+  slider10>=.5 ? (j=0;loop(5,uy[j]=1-uy[j];j+=1;););
+  uwrap=ux[0];
+  ux[2]=(ux[1]+ux[3])*.5;uy[2]=uy[1]+(uy[3]-uy[1])*ubend;
+);
+function ui_curve(p) local(v)
+(
+  v=periodic_at(p,min(.997,max(.001,slider13)),slider14,
+    min(.999,max(slider13+.002,slider19)),slider20,
+    slider12,slider22,min(.98,max(.02,slider16)),edge_start(),edge_end());
+  slider10>=.5 ? 1-v : v;
+);
+// Move an outer anchor while keeping the inner anchors at their absolute times.
+function move_edge(index t) local(start finish a b span)
+(
+  start=edge_start();finish=edge_end();span=finish-start;
+  a=start+min(.997,max(.001,slider13))*span;
+  b=start+min(.999,max(slider13+.002,slider19))*span;
+  index==0 ? start=min(a-.001,max(0,t)) : finish=max(b+.001,min(1,t));
+  span=max(.003,finish-start);
+  put(11,start);put(21,finish);
+  put(13,min(.997,max(.001,(a-start)/span)));
+  put(19,min(.999,max(slider13+.002,(b-start)/span)));
+);
+function move_point(index t v) local(norm)
+(
+  slider10>=.5 ? v=1-v;
+  index==0 || index==4 ? move_edge(index,t);
+  t=(t-edge_start())/(edge_end()-edge_start());
+  index==0 ? put(12,v);
+  index==4 ? put(22,v);
+  index==1 ? (put(13,min(slider19-.002,max(.001,t)));put(14,v););
+  index==3 ? (put(19,min(.999,max(slider13+.002,t)));put(20,v););
+  index==2 && abs(slider20-slider14)>.0001 ? (
+    norm=min(.98,max(.02,(v-slider14)/(slider20-slider14)));
+    put(16,norm);
+  );
+);
+function slide_transition(offset a b) local(shift span)
+(
+  span=edge_end()-edge_start();
+  shift=min(.999-b,max(.001-a,offset/span));
+  put(13,a+shift);put(19,b+shift);
+);
+function lift_section(tail offset a b) local(shift)
+(
+  slider10>=.5 ? (a=1-a;b=1-b;);
+  shift=min(1-max(a,b),max(-min(a,b),offset));
+  a+=shift;b+=shift;
+  slider10>=.5 ? (a=1-a;b=1-b;);
+  tail ? (put(20,a);put(22,b);) : (put(12,a);put(14,b););
+);
+function snap_transition() local(first last a b da db score best left right)
+(
+  first=ceil((uwrap+.001*uspan-.0000000001)/grid_step);
+  last=floor((uwrap+.999*uspan+.0000000001)/grid_step);
+  best=1000000;left=-1;right=-1;a=first;
+  loop(max(0,last-first+1),
+    b=a+1;
+    loop(max(0,last-a),
+      (b-a)*grid_step>=.002*uspan ? (
+        da=a*grid_step-ux[1];db=b*grid_step-ux[3];score=da*da+db*db;
+        score<best ? (best=score;left=a;right=b;);
+      );b+=1;
+    );a+=1;
+  );
+  left>=0 ? (
+    put(13,(left*grid_step-uwrap)/uspan);put(19,(right*grid_step-uwrap)/uspan);
+  );
+);
+function nearest_grid(t lo hi) local(first last)
+(
+  first=ceil((lo-.0000000001)/grid_step);last=floor((hi+.0000000001)/grid_step);
+  first<=last ? min(last,max(first,floor(t/grid_step+.5)))*grid_step : t;
+);
+function snap_point(index) local(lo hi target span)
+(
+  read_points();span=uspan;lo=0;hi=1;
+  index==0 ? hi=ux[1]-.001;
+  index==4 ? lo=ux[3]+.001;
+  index==1 ? (lo=uwrap+.001*span;hi=ux[3]-.002*span;);
+  index==3 ? (lo=ux[1]+.002*span;hi=uwrap+.999*span;);
+  index==2 ? (
+    snap_transition();
+  ) : move_point(index,nearest_grid(ux[index],lo,hi),uy[index]);
+);
+function fader(x y w title val minimum maximum param unit) local(f)
+(
+  label(x,y,title,15,slider1==1 ? ui_text : ui_disabled);
+  sprintf(#fv,"%.0f %s",val,unit);right_label(x+w-76,y-1,76,23,#fv,15,slider1==1 ? ui_text : ui_disabled);
+  roundbox(x,y+32,w,8,4,ui_rail);
+  f=(val-minimum)/(maximum-minimum);
+  roundbox(x,y+32,max(8,w*f),8,4,slider1==1 ? ui_accent : 0x4B4B4B);
+  color(slider1==1 ? ui_accent : ui_disabled,1);gfx_circle((x+f*w)*us,(y+36)*us,7*us,1,1);
+  pressed && slider1==1 && inside(x-6,y+24,w+12,24) ? drag=param;
+  drag==param && down && slider1==1 ? put(param,minimum+(maximum-minimum)*min(1,max(0,(mx-x)/w)));
+);
+
+// gfx_idle sends a closed-window callback. Listening must not remain on then.
+gfx_ext_flags&2 ? (
+  ui_visible=0;
+  slider9 ? (slider9=0;sliderchange(256);slider_automate(256););
+) : (
+  ui_visible=1;
+  !channels_checked ? (set_host_numchan(max(4,get_host_numchan()));channels_checked=1;);
+  gfx_getchar();
+  us=max(.1,min(gfx_w/820,gfx_h/600));uw=gfx_w/us;uh=gfx_h/us;
+  ux=2048;uy=2064;
+  mx=mouse_x/us;my=mouse_y/us;down=mouse_cap&1;
+  pressed=down && !last_down;released=!down && last_down;
+  now=time_precise();
+  // Shared palette: every active purple element uses this exact hue.
+  ui_bg=0x303030;ui_plot=0x242424;ui_text=0xD5D5D5;ui_muted=0xA0A0A0;
+  ui_accent=0xAF85FF;ui_selected=0x594770;ui_disabled=0x686868;ui_rail=0x484848;
+  rect(0,0,uw,uh,ui_bg);
+  button(20,18,88,30,"GRID",slider1==0) ? put(1,0);
+  button(116,18,88,30,"AUDIO",slider1==1) ? put(1,1);
+  brand_x=uw*.5-104.5;branding(brand_x,10);
+  slider1==0 && slider9 ? put(9,0);
+  button(uw-204,18,88,30,"INVERT",slider10) ? put(10,!slider10);
+  button(uw-108,18,88,30,"RESET",0) ? reset_shape();
+
+  gx=20;gy=65;gw=uw-40;gh=uh-260;
+  roundbox(gx,gy,gw,gh,9,ui_plot);
+  pl=gx+49;pt=gy+27;pw=gw-68;ph=gh-55;
+  udur=8/(2^floor(slider2));
+  // Display musical beats; short cycles are subdivided into equal beat parts.
+  grid_step=(4/max(1,ts_denom))/udur;
+  while(grid_step*pw>120)(grid_step*=.5;);
+  while(grid_step*pw<38)(grid_step*=2;);
+  read_points();
+  i=0;loop(5,
+    yy=pt+ph*i/4;
+    line(pl,yy,pl+pw,yy,0x414141,.8);
+    sprintf(#percent,"%d%%",100-i*25);label(gx+6,yy-10,#percent,14,ui_muted);
+    i+=1;
+  );
+  grid_i=0;
+  loop(min(128,ceil(1/grid_step)+1),
+    tt=min(1,grid_i*grid_step);xx=pl+tt*pw;
+    line(xx,pt,xx,pt+ph,0x414141,.65);
+    grid_i+=1;
+  );
+  // Relative musical length: half the selected duration at the center.
+  li=floor(slider2);
+  li==0 ? #half_length="1/1" : sprintf(#half_length,"1/%d",2^li);
+  li==0 ? #full_length="2/1" : sprintf(#full_length,"1/%d",2^(li-1));
+  centered(pl+pw*.5-50,pt+ph+5,100,28,#half_length,15,ui_text);
+  centered(pl+pw-45,pt+ph+5,90,28,#full_length,15,ui_text);
+
+  // Real post-gain program audio and filtered input 3/4, phase-aligned.
+  i=0;mid=pt+ph*.5;
+  loop(256,
+    stamps[i]>=cycle-1 && stamps[i]>0 ? (
+      xx=pl+(i+.5)*pw/256;
+      amp=sqrt(min(1,max(0,wave[i])))*ph*.45;
+      line(xx,mid-amp,xx,mid+amp,0xA2A2A7,.44);
+      slider1==1 ? (
+        amp=sqrt(min(1,max(0,scwave[i])))*ph*.45;
+        line(xx,mid-amp,xx,mid+amp,ui_accent,.48);
+      );
+    );i+=1;
+  );
+  // Reveal the transition region only while the pointer is over that region.
+  plot_hover=inside(pl+ux[1]*pw,pt,(ux[3]-ux[1])*pw,ph);
+  plot_hover ? (
+    color(ui_accent,.07);gfx_rect((pl+ux[1]*pw)*us,pt*us,(ux[3]-ux[1])*pw*us,ph*us);
+    i=0;loop(ceil(ph/9),
+      yy=pt+i*9;
+      line(pl+ux[1]*pw,yy,pl+ux[1]*pw,min(pt+ph,yy+5),ui_accent,.43);
+      line(pl+ux[3]*pw,yy,pl+ux[3]*pw,min(pt+ph,yy+5),ui_accent,.43);
+      i+=1;
+    );
+  );
+  // Graph sampling uses the same mathematical curve as the audio processor.
+  steps=max(256,ceil(pw*us));i=0;
+  ox=pl;oy=pt+ph*(1-ui_curve(0));
+  loop(steps,
+    pp=(i+1)/steps;xx=pl+pp*pw;yy=pt+ph*(1-ui_curve(pp));
+    stroke(ox,oy,xx,yy,3.2,ui_accent);
+    ox=xx;oy=yy;i+=1;
+  );
+  (slider1==0 && playing || slider1==1 && active) ?
+    line(pl+(slider1==1 ? fraction(ux[4]+phase) : phase)*pw,pt,
+         pl+(slider1==1 ? fraction(ux[4]+phase) : phase)*pw,pt+ph,0xE1DFE6,.55);
+  nearest=-1;dist=14*14;i=0;
+  loop(5,
+    xx=pl+ux[i]*pw;yy=pt+ph*(1-uy[i]);
+    dd=(mx-xx)^2+(my-yy)^2;
+    dd<dist ? (dist=dd;nearest=i;);
+    color(ui_accent,1);gfx_circle(xx*us,yy*us,6.4*us,1,1);
+    color(ui_plot,1);gfx_circle(xx*us,yy*us,2.8*us,1,1);
+    i+=1;
+  );
+  pressed && nearest>=0 ? (
+    now-last_click<.32 && last_point==nearest ? (
+      snap_point(nearest);drag=0;last_click=0;
+    ) : (drag=30+nearest;last_click=now;last_point=nearest;);
+  );
+  pressed && nearest<0 && inside(pl+ux[1]*pw,pt,(ux[3]-ux[1])*pw,ph) ? (
+    drag=27;region_down_x=mx;region_a=slider13;region_b=slider19;
+  );
+  section_t=(mx-pl)/pw;
+  section_head=section_t>ux[0] && section_t<ux[1];
+  section_tail=section_t>ux[3] && section_t<ux[4];
+  pressed && nearest<0 && (section_head || section_tail) && abs(my-(pt+ph*(1-ui_curve(section_t))))<=10 ? (
+    drag=section_tail ? 29 : 28;section_down_y=my;
+    section_a=section_tail ? slider20 : slider12;section_b=section_tail ? slider22 : slider14;
+  );
+  down && (drag==28 || drag==29) ? lift_section(drag==29,(section_down_y-my)/ph,section_a,section_b);
+  down && drag==27 ? slide_transition((mx-region_down_x)/pw,region_a,region_b);
+  down && drag>=30 && drag<=34 ? (
+    move_point(drag-30,min(1,max(0,(mx-pl)/pw)),min(1,max(0,1-(my-pt)/ph)));
+  );
+
+  by=gy+gh+18;
+  // One clean face, thick accent arc, inset white dot; no ornamental rings.
+  kx=100;ky=by+78;kr=48;arc_radius=55;
+  knob_hit=(mx-kx)^2+(my-ky)^2<=(arc_radius+5)^2;
+  pressed && knob_hit ? (
+    now-last_knob_click<.32 ? put(4,100);
+    drag=4;drag_y=my;drag_v=slider4;last_knob_click=now;
+  );
+  drag==4 && down ? put(4,min(100,max(0,drag_v+(drag_y-my)*(mouse_cap&8 ? .0704 : .44))));
+  knob_hit && mouse_wheel ? put(4,min(100,max(0,slider4+mouse_wheel/120)));
+  knob_art(kx,ky,min(1,max(0,slider4*.01)));
+  mix_readout=drag==4 && down;
+  mix_readout ? (sprintf(#mix_value,"%.0f%%",slider4);centered(kx-31,ky-13,62,26,#mix_value,15,ui_text););
+  centered(kx-45,by+129,90,24,"MIX",15,ui_text);
+
+  li=floor(slider2);li==0 ? #length="2/1" : sprintf(#length,"1/%d",2^(li-1));
+  button(168,by+7,48,28,#length,0) ? (
+    gfx_x=168*us;gfx_y=(by+35)*us;
+    choice=gfx_showmenu("2/1|1/1|1/2|1/4|1/8|1/16|1/32|1/64");
+    choice>0 ? put(2,choice-1);
+  );
+
+  // Small audition button aligned with the FILTER and TRIGGER labels.
+  fx=242;right_x=uw-230;fw=right_x-24-fx;
+  hx=fx+fw-18;hy=by+21;
+  pressed && slider1==1 && inside(hx-18,by+7,36,28) ? put(9,!slider9);
+  roundbox(hx-18,by+7,36,28,6,slider1==1 ? slider9 ? ui_selected : 0x3B3B3B : ui_bg);
+  i=0;loop(32,
+    aa=$pi*i/32;bb=$pi*(i+1)/32;
+    stroke(hx+7*cos(aa),hy-7*sin(aa),hx+7*cos(bb),hy-7*sin(bb),2,slider1==1 ? slider9 ? ui_accent : ui_text : ui_disabled);
+    i+=1;
+  );
+  roundbox(hx-8.5,hy-1,4,8,1.5,slider1==1 ? slider9 ? ui_accent : ui_text : ui_disabled);
+  roundbox(hx+4.5,hy-1,4,8,1.5,slider1==1 ? slider9 ? ui_accent : ui_text : ui_disabled);
+
+  label(fx,by+13,"FILTER",15,slider1==1 ? ui_text : ui_disabled);
+  rail=by+53;
+  hpv=log(max(10,slider6)/10)/log(2000);
+  lpv=log(max(10,slider7)/10)/log(2000);
+  roundbox(fx,rail-4,fw,8,4,ui_rail);
+  roundbox(fx+hpv*fw,rail-4,max(2,(lpv-hpv)*fw),8,4,slider1==1 ? ui_accent : 0x4B4B4B);
+  color(slider1==1 ? ui_accent : ui_disabled,1);
+  gfx_circle((fx+hpv*fw)*us,rail*us,8.8*us,1,1);
+  gfx_circle((fx+lpv*fw)*us,rail*us,8.8*us,1,1);
+  color(ui_bg,1);
+  gfx_circle((fx+hpv*fw)*us,rail*us,3.1*us,1,1);
+  gfx_circle((fx+lpv*fw)*us,rail*us,3.1*us,1,1);
+  pressed && slider1==1 && inside(fx-13,rail-17,fw+26,34) ? (
+    mx>fx+hpv*fw+12 && mx<fx+lpv*fw-12 ? (
+      drag=26;band_anchor_x=mx;band_hp=slider6;band_lp=slider7;
+    ) : drag=abs(mx-(fx+hpv*fw))<=abs(mx-(fx+lpv*fw)) ? 6 : 7;
+  );
+  down && slider1==1 && (drag==6 || drag==7) ? (
+    freq=10*2000^min(1,max(0,(mx-fx)/fw));
+    drag==6 ? put(6,min(slider7/1.02,max(10,freq))) : put(7,max(slider6*1.02,min(20000,freq)));
+  );
+  down && slider1==1 && drag==26 ? (
+    // One logarithmic offset moves both edges, preserving their frequency ratio.
+    band_shift=min(log(20000/band_lp),max(log(10/band_hp),(mx-band_anchor_x)/fw*log(2000)));
+    put(6,band_hp*exp(band_shift));put(7,band_lp*exp(band_shift));
+  );
+  // Actual reduction in muted yellow, without an extra trigger lamp.
+  label(right_x,by+13,"TRIGGER",15,slider1==1 ? ui_text : ui_disabled);
+  meter_level=slider1==1 ? min(1,max(0,1-gain)) : 0;
+  roundbox(right_x,rail-4,188,8,4,ui_rail);
+  meter_level>.001 ? roundbox(right_x,rail-4,max(5,188*meter_level),8,4,0xB3A04D);
+  fader(fx,by+93,fw,"THRESHOLD",slider5,-60,0,5,"dB");
+  fader(right_x,by+93,188,"RETRIGGER",slider8,1,250,8,"ms");
+
+  !down ? (
+    touch_mask ? (slider_automate(touch_mask,1);touch_mask=0;);
+    drag=0;
+  );
+  mouse_wheel=0;last_down=down;
+);

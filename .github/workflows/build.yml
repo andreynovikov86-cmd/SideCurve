@@ -1,0 +1,87 @@
+name: Build and validate VST3
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS-universal
+            args: '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0'
+          - os: windows-latest
+            label: Windows-x64
+            args: '-A x64'
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: steinbergmedia/vst3sdk
+          ref: 3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96
+          path: .test-deps/vst3sdk
+      - name: Fetch required SDK modules
+        working-directory: .test-deps/vst3sdk
+        run: git submodule update --init --depth 1 --jobs 4 base cmake pluginterfaces public.sdk vstgui4
+      - name: Configure
+        run: cmake -S . -B build -DVST3_SDK_ROOT="$GITHUB_WORKSPACE/.test-deps/vst3sdk" -DCMAKE_BUILD_TYPE=Release ${{ matrix.args }}
+      - name: Build
+        run: cmake --build build --config Release --target SideKick sidekick_tests sidekick_trace validator --parallel 4
+      - name: Test engine and window preferences
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Run official Steinberg validator
+        run: python tools/validate.py build
+      - name: Package
+        run: python tools/package.py build/VST3/Release/SideCurve.vst3 dist/SideCurve-0.5.5-${{ matrix.label }}.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SideCurve-${{ matrix.label }}
+          path: dist/*.zip
+  reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: justinfrankel/WDL
+          ref: 61c5553aad0d257775a4dd7bf36b8be617ec8281
+          path: .test-deps/WDL
+      - run: make -C .test-deps/WDL/WDL/eel2 NO_GFX=1 PORTABLE=1 -j2 loose_eel
+      - run: g++ -std=c++17 -O2 -Isrc tests/trace.cpp -o sidekick_trace
+      - run: python3 tests/conformance.py ./sidekick_trace .test-deps/WDL/WDL/eel2/loose_eel
+      - run: python3 JSFX/tests/test_engine.py .test-deps/WDL/WDL/eel2/loose_eel
+      - run: python3 JSFX/tests/test_ui.py .test-deps/WDL/WDL/eel2/loose_eel
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]'))
+    needs: [build, reference]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Package JSFX
+        run: python3 tools/package_jsfx.py JSFX dist/SideCurve-JSFX-0.4.5.zip
+      - name: Publish preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v0.5.5' }}
+        run: |
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/*.zip --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/*.zip --target "$GITHUB_SHA" --title "SideCurve $RELEASE_TAG" --prerelease --notes-file docs/RELEASE.md
+          fi

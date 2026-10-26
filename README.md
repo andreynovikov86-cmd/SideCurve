@@ -11,9 +11,9 @@ cached build still appears under Plugin King.
 
 [Download releases](https://github.com/andreynovikov86-cmd/SideCurve/releases) · [JSFX for REAPER](JSFX/README.md)
 
-The macOS universal VST3 and standalone JSFX have been packaged locally.
-Public release upload is pending. Windows x64 build and validation are prepared
-in GitHub Actions; no Windows binary has been verified in this workspace.
+Packaged builds are published under Releases after the automated checks pass:
+macOS universal VST3, Windows x64 VST3, and standalone JSFX for REAPER.
+The macOS editor and JSFX were also checked locally in REAPER.
 
 
 ## Controls
