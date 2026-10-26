@@ -38,9 +38,26 @@ def main():
             expected_binary = package.read('SideCurve.vst3/' + binary)
         helper = base / 'host_mock.py'
         helper.write_text('''from pathlib import Path
-import sys
+import subprocess,sys
 action,path=sys.argv[1:];p=Path(path)
 if action=='mkdir': p.mkdir(parents=True,exist_ok=True)
+elif action=='execute':
+ command=p.read_text(encoding='utf-8')
+ if sys.platform=='win32': args=command
+ else:
+  # WDL LineParser: a quote at token start selects a literal delimiter;
+  # backslash escapes and adjacent quoted-token concatenation are not special.
+  args=[];i=0
+  while i<len(command):
+   if command[i] in ' \\t': i+=1;continue
+   if command[i] in chr(34)+chr(39)+chr(96):
+    delimiter=command[i];i+=1;end=command.index(delimiter,i)
+   else:
+    end=i
+    while end<len(command) and command[end] not in ' \\t': end+=1
+   args.append(command[i:end]);i=end+1
+ result=subprocess.run(args,capture_output=True)
+ sys.stdout.buffer.write(str(result.returncode).encode()+b'\\n'+result.stdout+result.stderr)
 elif p.is_dir():
  for entry in sorted(p.iterdir()):
   if (action=='files' and entry.is_file()) or (action=='directories' and entry.is_dir()): print(entry.name)
@@ -53,7 +70,7 @@ elif p.is_dir():
             # The stock Windows Lua runtime follows the system code page;
             # REAPER has its own UTF-8 filesystem wrappers. Exercise spaces on
             # both platforms and Unicode/apostrophe quoting on macOS.
-            user = case / ('User with spaces' if platform == 'win' else "Музыка with spaces ' and quotes")
+            user = case / ('User with spaces' if platform == 'win' else 'Музыка with spaces \' " $ & quotes')
             resource = user / 'REAPER resource'
             payload = case / 'ReaPack files'
             (payload / 'files').mkdir(parents=True)

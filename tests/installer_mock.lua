@@ -26,11 +26,12 @@ reaper = {
     if scenario == 'extraction-failure' and (command:find('ditto',1,true) or command:find('tar.exe',1,true)) then
       return '1\nSimulated extraction failure'
     end
-    -- Product commands use CreateProcess on Windows. io.popen invokes cmd.exe,
-    -- so add its required outer quote pair only in this test adapter.
-    local f = assert(io.popen(win and ('"' .. command .. '"') or command, 'r'))
-    local output = f:read('*a'); local ok, _, code = f:close()
-    return tostring(ok and 0 or code or 1) .. '\n' .. output
+    -- Delegate a literal command line to Python's CreateProcess adapter on
+    -- Windows or WDL-compatible argument parsing on macOS. No shell interprets
+    -- the product command, matching REAPER's ExecProcess contract.
+    local path = payload .. '/process-command.txt'
+    local f = assert(io.open(path, 'wb')); f:write(command); f:close()
+    return helper_call('execute', path)
   end,
 }
 local installer = dofile(root .. '/distribution/SideCurve/installer.lua')

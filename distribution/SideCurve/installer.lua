@@ -35,7 +35,14 @@ local function execute(arguments, windows)
       quoted = quoted:gsub('(\\+)$', '%1%1')
       words[#words + 1] = '"' .. quoted .. '"'
     else
-      words[#words + 1] = "'" .. arg:gsub("'", "'\\''") .. "'"
+      -- REAPER parses arguments directly; it does not run a POSIX shell. Its
+      -- WDL parser supports three quote delimiters, without shell escapes.
+      local delimiter
+      for _, candidate in ipairs({'"', "'", '`'}) do
+        if not arg:find(candidate, 1, true) then delimiter = candidate; break end
+      end
+      if not delimiter then fail('A folder path contains all three quote characters. Move the package to a simpler path and try again.') end
+      words[#words + 1] = delimiter .. arg .. delimiter
     end
   end
   local result = reaper.ExecProcess(table.concat(words, ' '), 60000)
