@@ -1,99 +1,71 @@
-# SideCurve (Sidechain Shaper)
+<div align="center">
 
-A native VST3 volume shaper for macOS and Windows, with the approved AN maker
-mark and a custom resizable interface directly in the DAW. No Lua or JSFX dependency.
-The title combines AN, SideCurve and a smaller regular-weight **by Andrey Novikov**
-signature. The maker mark is vector artwork; no external font file is bundled.
-The VST3 manufacturer is **Andrey Novikov**. Rescan changed plugins if an older
-cached build still appears under Plugin King.
+<img src="resources/AndreyNovikov-AN.svg" alt="AN — Andrey Novikov" width="76">
 
-![SideCurve VST3](docs/SideCurve.png)
+# SideCurve
 
-[Download releases](https://github.com/andreynovikov86-cmd/SideCurve/releases) · [JSFX for REAPER](JSFX/README.md)
+**Sidechain Shaper · by Andrey Novikov**
 
-Packaged builds are published under Releases after the automated checks pass:
-macOS universal VST3, Windows x64 VST3, and standalone JSFX for REAPER.
-The macOS editor and JSFX were also checked locally in REAPER.
+**English** · [Русский](README.ru.md)
 
+Shape your volume curve. Sync it to the beat or trigger it from audio.
 
-## Controls
+[**Download**](https://github.com/andreynovikov86-cmd/SideCurve/releases/tag/v0.5.5) · [Installation](docs/INSTALL.md) · [Manual](docs/MANUAL.md)
 
-- **GRID** repeats the envelope in sync with the project tempo.
-- **AUDIO** starts a single pass on each detected sidechain attack. In REAPER,
-  send source audio 1/2 to the effect track's channels 3/4.
-- **INVERT** reflects levels vertically (`y -> 1 - y`), preserving point times.
-- **RESET** recalls REAPER's saved user default from a focused track FX window;
-  otherwise it restores factory settings.
-- **MIX** blends dry and shaped audio. The purple arc follows its near-rim white
-  dot; percent is visible only while pressed/dragged. Drag vertically, Shift for
-  fine adjustment, wheel for increments, double-click MIX for 100 percent.
-  Drag sensitivity is 12% slower than the previous preview.
-- Select straight durations **2/1 to 1/64**. The graph shows half the duration
-  at its center and the full length at its right edge.
+![SideCurve in action: waveforms, curve editing and MIX](docs/media/SideCurve-Demo.gif)
 
-Four anchors move freely in time and level. A middle handle controls curvature.
-Double-click an anchor to snap to the nearest legal **vertical musical grid line**
-without resetting its level. The middle handle's double-click snaps only points 2 and 4 to their nearest
-legal time-grid lines. The middle handle remains between them, and levels and
-bend are preserved.
+*Recorded in REAPER. The GIF shows the actual plugin.*
 
-Hover directly over the region between points 2 and 4 to reveal its shading.
-Drag empty space there horizontally to move both anchors, preserving width, levels
-and bend. Point dragging takes precedence and outer anchors bound the movement.
-Drag the curve segment between points 1–2 or 4–5 vertically to raise or lower
-that pair together. Relative levels and times are preserved, including at bounds.
+</div>
 
-The curve is smooth at anchors and across GRID period boundaries. Outer anchors
-set the end-to-start transition. In AUDIO every accepted attack starts from actual
-gain, replays the whole tail-plus-head join, and holds the final point's level
-after completion until the next attack. Early attacks can restart an active pass.
+## Shape the groove
 
-The HP/LP detector filter covers **10 Hz–20 kHz** with **48 dB/octave** Butterworth
-edges. Drag either edge or the whole selected band. Headphones audition the
-filtered sidechain and turn off on editor close. THRESHOLD and RETRIGGER control
-sensitivity and minimum attack spacing; their values show dB/ms on the right.
-Detector controls are disabled in GRID. All control rails have equal thickness.
+| GRID | AUDIO | MIX |
+| --- | --- | --- |
+| Repeat your curve in sync with the project tempo. | Start the curve from a kick, snare or another sidechain signal. | Blend the effect with the original signal; see the percentage while adjusting. |
 
-Gray peaks show processed main audio; purple peaks show the filtered sidechain.
-Square-root display scaling reveals quiet signals without changing audio. Yellow
-TRIGGER indicates gain reduction. Active purple controls share **#AF85FF**.
-Window resizing persists for later instances on the same computer.
+- **Edit the curve directly.** Move points, slide the central transition, or raise/lower the beginning and end as pairs.
+- **Find the right trigger.** A 10 Hz–20 kHz detector filter, threshold, retrigger timing and headphone audition help isolate the sound you need.
+- **See both signals.** Main and sidechain waveforms stay visible even at quiet levels.
+- **Keep your setup.** Resizable interface, remembered window size, vertical INVERT and RESET to your saved default.
 
-## Compatibility and status
+## Download
 
-The bundle is now **SideCurve.vst3**. Stable processor/controller class IDs and
-parameter IDs are retained from SideKick. Saved-state loading after renaming was
-checked in an isolated REAPER project. INVERT intentionally has new vertical
-semantics, including when it was enabled in an older saved project.
+**Free and open source · MIT license**
 
-The macOS universal build and editor were checked locally. Both macOS universal
-and Windows x64 packages passed the engine tests and official Steinberg validator
-in [GitHub Actions](https://github.com/andreynovikov86-cmd/SideCurve/actions/runs/40307825037).
-See [validation](docs/VALIDATION.md) and [installation](docs/INSTALL.md).
+| Platform | Format | Download |
+| --- | --- | --- |
+| macOS 11+ · Apple Silicon + Intel | Universal VST3 · 0.5.5 preview | [macOS ZIP](https://github.com/andreynovikov86-cmd/SideCurve/releases/download/v0.5.5/SideCurve-0.5.5-macOS-universal.zip) |
+| Windows · x64 | VST3 · 0.5.5 preview | [Windows ZIP](https://github.com/andreynovikov86-cmd/SideCurve/releases/download/v0.5.5/SideCurve-0.5.5-Windows-x64.zip) |
+| REAPER · macOS / Windows | JSFX · 0.4.5 | [JSFX ZIP](https://github.com/andreynovikov86-cmd/SideCurve/releases/download/v0.5.5/SideCurve-JSFX-0.4.5.zip) |
 
-## Build
+Unzip the VST3 package and copy the **entire SideCurve.vst3 bundle** into your VST3 folder, then rescan in your DAW. For JSFX, unzip its package and run the included **Install SideCurve.lua** once from REAPER's Actions list. [Full installation instructions →](docs/INSTALL.md)
 
-CMake 3.25+, C++17, official VST3 SDK revision
-`3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96`, including base, cmake,
-pluginterfaces, public.sdk and vstgui4 submodules:
+The macOS preview is ad hoc signed and is not Apple notarized. Both VST3 builds passed the official Steinberg validator: **47 checks passed, 0 failed**. [Validation details](docs/VALIDATION.md)
 
-```sh
-cmake -S . -B build -DVST3_SDK_ROOT=/absolute/path/to/vst3sdk -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release --target SideKick sidekick_tests sidekick_trace validator
-ctest --test-dir build -C Release --output-on-failure
-python3 tools/validate.py build
-```
+## A closer look
 
-SideKick remains the internal CMake target name; the produced bundle is SideCurve.
-For universal macOS add `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` and
-`-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0`. On Windows use Visual Studio 2022+ x64.
+### AUDIO mode and MIX
 
-`reference/SideCurve.jsfx` is the versioned 0.4.5 EEL2 audio reference; it is not
-loaded by the VST3. Compare actual C++ and EEL2 output at 44.1/48/96 kHz with:
+The percentage appears while you press or adjust MIX.
 
-```sh
-python3 tests/conformance.py build/sidekick_trace /path/to/WDL/WDL/eel2/loose_eel
-```
+![SideCurve AUDIO mode with main and sidechain waveforms and MIX at 67 percent](docs/media/SideCurve-Audio-Mix.png)
 
-MIT source license. VST3 SDK and VSTGUI notices are in licenses/. VST is a
-trademark of Steinberg Media Technologies GmbH.
+### Move the transition
+
+Hover over the central region to reveal it, then drag horizontally to move the transition. Points remain individually editable.
+
+![SideCurve with the curve transition region highlighted](docs/media/SideCurve-Curve-Region.png)
+
+## Get started in REAPER
+
+1. Insert SideCurve on the track you want to shape.
+2. Choose **GRID** for a tempo-synced repeating curve.
+3. For **AUDIO**, send the trigger track's channels **1/2 → 3/4** on the SideCurve track, then adjust FILTER and THRESHOLD.
+4. Shape the curve and set MIX by ear.
+
+In AUDIO mode, each accepted trigger starts one pass. After it finishes, the last point's level is held until the next trigger.
+
+[Detailed controls and building from source](docs/MANUAL.md) · [JSFX documentation](JSFX/README.md) · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+
+VST is a trademark of Steinberg Media Technologies GmbH. Third-party notices are included in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
