@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<index version="1" name="SideCurve by Andrey Novikov" commit="7e4bba8576c13137cb32b3ef700fcf368a2d05bb">
+  <category name="SideCurve">
+    <reapack name="SideCurve - Install or Update VST3.lua" type="script" desc="SideCurve - VST3 and JSFX installers">
+      <metadata>
+        <description>{\rtf1\ansi SideCurve installers for macOS and Windows. After installing or updating this package, run the VST3 or JSFX installer action in REAPER. Synchronization alone does not replace the plugin.}</description>
+      </metadata>
+      <version name="1.0.0" author="Andrey Novikov" time="2026-10-26T23:51:17Z">
+        <source file="SideCurve - Install or Update VST3.lua" main="main">https://raw.githubusercontent.com/andreynovikov86-cmd/SideCurve/7e4bba8576c13137cb32b3ef700fcf368a2d05bb/distribution/SideCurve/SideCurve%20-%20Install%20or%20Update%20VST3.lua</source>
+        <source file="SideCurve - Install or Update JSFX.lua" main="main">https://raw.githubusercontent.com/andreynovikov86-cmd/SideCurve/7e4bba8576c13137cb32b3ef700fcf368a2d05bb/distribution/SideCurve/SideCurve%20-%20Install%20or%20Update%20JSFX.lua</source>
+        <source file="installer.lua">https://raw.githubusercontent.com/andreynovikov86-cmd/SideCurve/7e4bba8576c13137cb32b3ef700fcf368a2d05bb/distribution/SideCurve/installer.lua</source>
+        <source file="files/SideCurve.jsfx">https://raw.githubusercontent.com/andreynovikov86-cmd/SideCurve/7e4bba8576c13137cb32b3ef700fcf368a2d05bb/JSFX/Effects/SideKick/SideKick.jsfx</source>
+        <source file="files/SideCurve-0.5.5-macOS-universal.zip" platform="darwin">https://github.com/andreynovikov86-cmd/SideCurve/releases/download/v0.5.5/SideCurve-0.5.5-macOS-universal.zip</source>
+        <source file="files/SideCurve-0.5.5-Windows-x64.zip" platform="win64">https://github.com/andreynovikov86-cmd/SideCurve/releases/download/v0.5.5/SideCurve-0.5.5-Windows-x64.zip</source>
+      </version>
+    </reapack>
+  </category>
+</index>

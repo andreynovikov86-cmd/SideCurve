@@ -8,7 +8,13 @@ a smaller regular-weight **by Andrey Novikov** signature beneath the product nam
 
 ## Install and update
 
-Unzip the package, load **Install SideCurve.lua** through REAPER's Actions list,
+For installation and updates inside REAPER, import the
+[SideCurve ReaPack repository](../docs/REAPACK.md), install **SideCurve - VST3
+and JSFX installers**, then run **SideCurve - Install or Update JSFX** from
+the Actions list. After future ReaPack synchronizations, run that action again.
+Synchronization downloads files; the action installs the configured effect.
+
+For manual ZIP installation, unzip the package, load **Install SideCurve.lua** through REAPER's Actions list,
 and run it once. Add **SideCurve (Sidechain Shaper)** from the track FX browser.
 The installer also enables RESET to read REAPER's saved user-default preset.
 For a manual installation, copy `Effects/SideKick` into REAPER's resource folder.
@@ -70,7 +76,8 @@ Gray peaks show processed main audio; purple peaks show filtered sidechain audio
 Square-root display scaling keeps quiet signals visible without changing audio.
 All active purple controls use **#AF85FF**; gray overlays indicate disabled state.
 The knob and brand block use cached supersampled native drawing for smooth
-edges. PK and PLUGIN KING are vector outlines, independent of installed fonts.
+edges. The AN maker mark is a vector outline; the signature uses readable,
+regular-weight text.
 
 **RESET** recalls the preset mapped by REAPER's **Save preset as default…**,
 including one named **No preset**. Missing or malformed defaults use the factory

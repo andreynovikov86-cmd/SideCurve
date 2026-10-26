@@ -1,4 +1,10 @@
-# Install and update SideCurve VST3
+# Install and update SideCurve
+
+For REAPER, both **VST3 and JSFX** can be installed through the
+[SideCurve ReaPack repository](REAPACK.md). After installing or synchronizing
+the package, run its installer action for the format you need. The instructions
+below cover manual VST3 installation; manual JSFX installation is described in
+[JSFX/README.md](../JSFX/README.md).
 
 Unzip the package and copy the **entire SideCurve.vst3 bundle**.
 
@@ -60,8 +66,10 @@ source repository is for testing, and is not a VST3 dependency.
 3. Replace the entire installed `SideCurve.vst3` bundle in the same VST3 folder.
 4. Reopen the DAW and refresh its VST3 plug-in list if needed.
 
-The existing plug-in IDs and window preferences are retained. Updates currently
-use the release archives; ReaPack installation and updates are not configured.
+The existing plug-in IDs and window preferences are retained. If you use
+ReaPack, choose **Synchronize packages**, then run **SideCurve - Install or
+Update VST3** again. Synchronization alone does not replace the installed
+plug-in. See the [ReaPack guide](REAPACK.md).
 
 ### Migrating from an early preview
 

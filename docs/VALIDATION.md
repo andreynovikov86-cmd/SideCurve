@@ -32,3 +32,25 @@ the product title is slightly smaller, the author line is closer, and visible
 text stays within the AN mark's top/bottom bounds. The current source passed
 all 74 real-EEL UI checks; the current VST3 binary passed all 47 SDK validator
 checks and macOS signature verification. Current screenshots: `SideCurve.png`.
+
+## ReaPack distribution
+
+The [repository installer workflow](https://github.com/andreynovikov86-cmd/SideCurve/actions/runs/40422461025)
+passed on macOS and Windows for the indexed installer sources. Each platform
+passed **14 filesystem integration scenarios**, using the real published ZIP
+and the real Lua installer: fresh install, update, missing/corrupt/malformed
+archive, extraction failure, publication failure, failed rollback with the
+previous bundle preserved, loaded-file failure, early preview detection,
+unsupported platform, JSFX fresh install/update and incomplete JSFX payload.
+
+Hashes, extraction, writes and renames operate on real temporary files; REAPER's
+host APIs are adapted by the test fixture. Windows commands run directly through
+CreateProcess, and macOS arguments follow Cockos WDL parsing rather than shell
+parsing. The macOS tests include Unicode, spaces, quotes and shell punctuation
+in paths and verify the installed bundle's signature. These are installer
+integration checks, not an additional DAW listening or ReaPack GUI test.
+
+Index checks cover both registered Actions, per-platform ZIP selection, source
+commit pinning, destination paths, duplicate-version rejection and preservation
+of older versions. ReaPack synchronization downloads the package; an explicit
+installer action performs each plugin installation/update.

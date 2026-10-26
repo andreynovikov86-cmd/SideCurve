@@ -10,7 +10,7 @@
 
 Нарисуй кривую громкости. Синхронизируй её с темпом или запускай от аудиосигнала.
 
-[**Скачать**](https://github.com/andreynovikov86-cmd/SideCurve/releases/tag/v0.5.5) · [Установка](#установка) · [Как пользоваться](#быстрый-старт-в-reaper)
+[**Скачать**](https://github.com/andreynovikov86-cmd/SideCurve/releases/tag/v0.5.5) · [**Установка через ReaPack**](#установка-и-обновление-через-reapack) · [Установка вручную](#установка) · [Как пользоваться](#быстрый-старт-в-reaper)
 
 ![SideCurve в работе: сигналы, редактирование кривой и MIX](docs/media/SideCurve-Demo.gif)
 
@@ -40,6 +40,22 @@
 | REAPER · macOS / Windows | JSFX · 0.4.5 | [Архив JSFX](https://github.com/andreynovikov86-cmd/SideCurve/releases/download/v0.5.5/SideCurve-JSFX-0.4.5.zip) |
 
 Обе сборки VST3 прошли официальный валидатор Steinberg: **47 проверок, 0 ошибок**. [Отчёт о проверках — на английском](docs/VALIDATION.md)
+
+## Установка и обновление через ReaPack
+
+В REAPER открой **Extensions → ReaPack → Import repositories** и добавь ссылку:
+
+```text
+https://raw.githubusercontent.com/andreynovikov86-cmd/SideCurve/main/index.xml
+```
+
+1. В **ReaPack → Browse packages** найди и установи **SideCurve - VST3 and JSFX installers**.
+2. Открой список **Actions** и запусти **SideCurve - Install or Update VST3** либо **SideCurve - Install or Update JSFX** — в зависимости от нужного формата.
+3. Сохрани проекты, перезапусти REAPER и при необходимости обнови список FX.
+
+Для обновления выбери **ReaPack → Synchronize packages**, затем **снова запусти то же действие установки**. Синхронизация скачивает пакет, а действие устанавливает плагин. Для VST3 нужны macOS 11+ или Windows 10+ x64. Установка идёт в папку текущего пользователя.
+
+Если ReaPack ещё не установлен, его можно скачать с [официального сайта](https://reapack.com/). [Подробности, пути установки и удаление — на английском](docs/REAPACK.md).
 
 ## Установка
 

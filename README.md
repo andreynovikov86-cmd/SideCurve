@@ -10,7 +10,7 @@
 
 Shape your volume curve. Sync it to the beat or trigger it from audio.
 
-[**Download**](https://github.com/andreynovikov86-cmd/SideCurve/releases/tag/v0.5.5) · [Installation](docs/INSTALL.md) · [Manual](docs/MANUAL.md)
+[**Download**](https://github.com/andreynovikov86-cmd/SideCurve/releases/tag/v0.5.5) · [**Install with ReaPack**](docs/REAPACK.md) · [Installation](docs/INSTALL.md) · [Manual](docs/MANUAL.md)
 
 ![SideCurve in action: waveforms, curve editing and MIX](docs/media/SideCurve-Demo.gif)
 
@@ -42,6 +42,18 @@ Shape your volume curve. Sync it to the beat or trigger it from audio.
 Unzip the VST3 package and copy the **entire SideCurve.vst3 bundle** into your VST3 folder, then rescan in your DAW. For JSFX, unzip its package and run the included **Install SideCurve.lua** once from REAPER's Actions list. [Full installation instructions →](docs/INSTALL.md)
 
 The macOS preview is ad hoc signed and is not Apple notarized. Both VST3 builds passed the official Steinberg validator: **47 checks passed, 0 failed**. [Validation details](docs/VALIDATION.md)
+
+## Install and update with ReaPack
+
+In REAPER, import this repository in **Extensions → ReaPack → Import repositories**:
+
+```text
+https://raw.githubusercontent.com/andreynovikov86-cmd/SideCurve/main/index.xml
+```
+
+Install **SideCurve - VST3 and JSFX installers** from Browse packages. Then open the Actions list and run **SideCurve - Install or Update VST3** or **SideCurve - Install or Update JSFX**. Save your projects and restart REAPER.
+
+For updates, choose **ReaPack → Synchronize packages**, then run the same installer action again. Synchronization downloads the package; the action installs it. VST3: macOS 11+ / Windows 10+ x64. [Full ReaPack guide →](docs/REAPACK.md)
 
 ## A closer look
 
