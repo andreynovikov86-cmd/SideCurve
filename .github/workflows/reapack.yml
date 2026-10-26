@@ -1,0 +1,30 @@
+name: Verify repository installers
+on:
+  push:
+    branches: [main]
+    paths: ['distribution/**', 'tests/*installer*', 'tools/lua-test/**', 'index.xml', '.github/workflows/reapack.yml']
+  pull_request:
+    paths: ['distribution/**', 'tests/*installer*', 'tools/lua-test/**', 'index.xml', '.github/workflows/reapack.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the pinned Lua test runtime
+        run: cmake -S tools/lua-test -B build-lua -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build-lua --config Release --parallel 4
+      - name: Test real archive installation, replacement and rollback
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            python tests/test_installer.py --lua build-lua/Release/sidecurve_lua.exe
+          else
+            python3 tests/test_installer.py --lua build-lua/sidecurve_lua
+          fi
