@@ -16,8 +16,14 @@ Installed and visually checked on 26 October 2026 on macOS Apple Silicon.
 - The corresponding current JSFX passed all **74 real-EEL UI checks** and its
   signature was also visually inspected. The user's project was untouched.
 
-Windows x64 CI is prepared but has not run. Intel code is compiled, but Intel
-hardware and broader real-project listening checks remain pending.
+The [publication workflow](https://github.com/andreynovikov86-cmd/SideCurve/actions/runs/40307825037)
+completed successfully on 26 October 2026 for both macOS universal and Windows x64.
+Each platform passed the engine tests and the official validator: **47 passed,
+0 failed**. The C++/EEL2 conformance and JSFX audio/UI checks also passed on Linux.
+The Windows test translation unit explicitly includes `<string>` for MSVC.
+The published [v0.5.5 preview](https://github.com/andreynovikov86-cmd/SideCurve/releases/tag/v0.5.5)
+contains both VST3 packages and JSFX 0.4.5. Intel hardware, Windows DAW listening,
+and broader real-project listening checks remain pending.
 
 ## Compact title update
 

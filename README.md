@@ -66,8 +66,9 @@ parameter IDs are retained from SideKick. Saved-state loading after renaming was
 checked in an isolated REAPER project. INVERT intentionally has new vertical
 semantics, including when it was enabled in an older saved project.
 
-The macOS universal build and editor were checked locally. Windows x64 build and
-validation are prepared in GitHub Actions but have not been run in this workspace.
+The macOS universal build and editor were checked locally. Both macOS universal
+and Windows x64 packages passed the engine tests and official Steinberg validator
+in [GitHub Actions](https://github.com/andreynovikov86-cmd/SideCurve/actions/runs/40307825037).
 See [validation](docs/VALIDATION.md) and [installation](docs/INSTALL.md).
 
 ## Build
